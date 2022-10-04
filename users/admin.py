@@ -5,4 +5,33 @@ from django.contrib.auth.admin import UserAdmin
 # Register your models here.
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    pass
+    fieldsets = (
+        (
+            "Profile",
+            {
+                "fields": ("username", "password", "name", "email", "is_host"),
+                "classes": ("wide",),  # 펼치기
+            },
+        ),
+        (
+            "Permissions",
+            {
+                "fields": (
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                ),
+                "classes": ("collapse",),  # 접기
+            },
+        ),
+        (
+            "Important Dates",
+            {
+                "fields": ("last_login", "date_joined"),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+    list_display = ("username", "email", "name", "is_host")
