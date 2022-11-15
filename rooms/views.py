@@ -1,5 +1,5 @@
 from rest_framework.views import APIView
-from .serializers import AmenitySerializer, RoomSerializer
+from .serializers import AmenitySerializer, RoomListSerializer, RoomDetailSerializer
 from rest_framework.exceptions import NotFound
 from .models import Amenity, Room
 from rest_framework.response import Response
@@ -55,5 +55,18 @@ class AmenityDetail(APIView):
 class Rooms(APIView):
     def get(self, request):
         all_rooms = Room.objects.all()
-        serializer = RoomSerializer(all_rooms, many=True)
+        serializer = RoomListSerializer(all_rooms, many=True)
+        return Response(serializer.data)
+
+
+class RoomDetail(APIView):
+    def get_object(self, pk):
+        try:
+            return Room.objects.get(pk=pk)
+        except Room.DoesNotExist:
+            raise NotFound
+
+    def get(self, request, pk):
+        room = self.get_object(pk)
+        serializer = RoomDetailSerializer(room)
         return Response(serializer.data)
