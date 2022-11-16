@@ -66,12 +66,19 @@ class AmenityDetail(APIView):
 class Rooms(APIView):
     def get(self, request):
         all_rooms = Room.objects.all()
-        serializer = RoomListSerializer(all_rooms, many=True)
+        serializer = RoomListSerializer(
+            all_rooms,
+            many=True,
+            context={"request", request},
+        )
         return Response(serializer.data)
 
     def post(self, request):
         if request.user.is_authenticated:
-            serializer = RoomDetailSerializer(data=request.data)
+            serializer = RoomDetailSerializer(
+                data=request.data,
+                context={"request": request},
+            )
             if serializer.is_valid():
                 category_pk = request.data.get("category")
                 if not category_pk:
@@ -96,7 +103,10 @@ class Rooms(APIView):
                             room.amenities.add(
                                 amenity
                             )  # many to many 일때는 반복문을 이용을하여 add 함수를 이용하여 추가
-                        serializer = RoomDetailSerializer(room)
+                        serializer = RoomDetailSerializer(
+                            room,
+                            context={"request": request},
+                        )
                         return Response(serializer.data)
                 except Exception:
                     raise ParseError("Amenity not found")
@@ -115,7 +125,10 @@ class RoomDetail(APIView):
 
     def get(self, request, pk):
         room = self.get_object(pk)
-        serializer = RoomDetailSerializer(room)
+        serializer = RoomDetailSerializer(
+            room,
+            context={"request": request},
+        )
         return Response(serializer.data)
 
     def put(self, request, pk):
@@ -128,6 +141,7 @@ class RoomDetail(APIView):
             room,
             data=request.data,
             partial=True,
+            context={"request": request},
         )
         if serializer.is_valid():
             category_pk = request.data.get("category")
@@ -152,7 +166,10 @@ class RoomDetail(APIView):
                             room.amenities.add(amenity)
 
                     print(room.amenities)
-                    serializer = RoomDetailSerializer(room)
+                    serializer = RoomDetailSerializer(
+                        room,
+                        context={"request": request},
+                    )
                     return Response(serializer.data)
             except Exception:
                 raise ParseError("Amenity not found")
