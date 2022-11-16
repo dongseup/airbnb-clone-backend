@@ -1,10 +1,16 @@
 from rest_framework.views import APIView
 from rest_framework.status import HTTP_204_NO_CONTENT
 from rest_framework.response import Response
-from rest_framework.exceptions import NotFound, NotAuthenticated, ParseError
+from rest_framework.exceptions import (
+    NotFound,
+    NotAuthenticated,
+    ParseError,
+    PermissionDenied,
+)
 from .models import Amenity, Room
 from categories.models import Category
 from .serializers import AmenitySerializer, RoomListSerializer, RoomDetailSerializer
+from django.db import transaction
 
 
 class Amenities(APIView):
@@ -76,24 +82,24 @@ class Rooms(APIView):
                         raise ParseError("The category kind should be 'rooms'")
                 except Category.DoesNotExist:
                     raise ParseError("Category not found")
-                room = serializer.save(
-                    owner=request.user,  # foregin key 일때 저장시 키값 넘김
-                    category=category,
-                )
-                # amenitiy 로직
-                amenities = request.data.get("amenities")
-                for amenity_pk in amenities:
-                    try:
-                        amenity = Amenity.objects.get(pk=amenity_pk)
-                    except Amenity.DoesNotExitst:
-                        room.delete()  # 룸이 생성되고 에러가 발생되었기 때문에 room을 제거
-                        raise ParseError(f"Amenity with id {amenity_pk} not found")
-                    room.amenities.add(
-                        amenity
-                    )  # many to many 일때는 반복문을 이용을하여 add 함수를 이용하여 추가
 
-                serializer = RoomDetailSerializer(room)
-                return Response(serializer.data)
+                try:
+                    with transaction.atomic():  # 아래 영역내에서 에러 없이 모두 실행이 될때 패스됨
+                        room = serializer.save(
+                            owner=request.user,  # foregin key 일때 저장시 키값 넘김
+                            category=category,
+                        )
+                        # amenitiy 로직
+                        amenities = request.data.get("amenities")
+                        for amenity_pk in amenities:
+                            amenity = Amenity.objects.get(pk=amenity_pk)
+                            room.amenities.add(
+                                amenity
+                            )  # many to many 일때는 반복문을 이용을하여 add 함수를 이용하여 추가
+                        serializer = RoomDetailSerializer(room)
+                        return Response(serializer.data)
+                except Exception:
+                    raise ParseError("Amenity not found")
             else:
                 return Response(serializer.errors)
         else:
@@ -111,3 +117,29 @@ class RoomDetail(APIView):
         room = self.get_object(pk)
         serializer = RoomDetailSerializer(room)
         return Response(serializer.data)
+
+    def put(self, request, pk):
+        room = self.get_object(pk)
+        if not request.user.is_authenticated:
+            raise NotAuthenticated
+        if room.owner != request.user:
+            raise PermissionDenied
+        serializer = RoomDetailSerializer(
+            room,
+            data=request.data,
+            partial=True,
+        )
+        if serializer.is_valid():
+            update_room = serializer.save()
+            return Response(RoomDetailSerializer(update_room).data)
+        else:
+            return Response(serializer.errors)
+
+    def delete(self, request, pk):
+        room = self.get_object(pk)
+        if not request.user.is_authenticated:
+            raise NotAuthenticated
+        if room.owner != request.user:
+            raise PermissionDenied
+        room.delete()
+        return Response(status=HTTP_204_NO_CONTENT)
