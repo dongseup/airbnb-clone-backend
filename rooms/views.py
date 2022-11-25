@@ -1,4 +1,6 @@
+from django.conf import settings
 from rest_framework.views import APIView
+from django.db import transaction
 from rest_framework.status import HTTP_204_NO_CONTENT
 from rest_framework.response import Response
 from rest_framework.exceptions import (
@@ -10,10 +12,8 @@ from rest_framework.exceptions import (
 from .models import Amenity, Room
 from categories.models import Category
 from .serializers import AmenitySerializer, RoomListSerializer, RoomDetailSerializer
-from django.db import transaction
-from reviews.serializer import ReviewSerializer
-from django.conf import settings
-from medias.serializer import PhotoSerializer
+from reviews.serializers import ReviewSerializer
+from medias.serializers import PhotoSerializer
 from rest_framework.permissions import IsAuthenticatedOrReadOnly
 
 
@@ -76,15 +76,12 @@ class Rooms(APIView):
         serializer = RoomListSerializer(
             all_rooms,
             many=True,
-            context={"request", request},
+            context={"request": request},
         )
         return Response(serializer.data)
 
     def post(self, request):
-        serializer = RoomDetailSerializer(
-            data=request.data,
-            context={"request": request},
-        )
+        serializer = RoomDetailSerializer(data=request.data)
         if serializer.is_valid():
             category_pk = request.data.get("category")
             if not category_pk:
@@ -95,24 +92,17 @@ class Rooms(APIView):
                     raise ParseError("The category kind should be 'rooms'")
             except Category.DoesNotExist:
                 raise ParseError("Category not found")
-
             try:
-                with transaction.atomic():  # 아래 영역내에서 에러 없이 모두 실행이 될때 패스됨
+                with transaction.atomic():
                     room = serializer.save(
-                        owner=request.user,  # foregin key 일때 저장시 키값 넘김
+                        owner=request.user,
                         category=category,
                     )
-                    # amenitiy 로직
                     amenities = request.data.get("amenities")
                     for amenity_pk in amenities:
                         amenity = Amenity.objects.get(pk=amenity_pk)
-                        room.amenities.add(
-                            amenity
-                        )  # many to many 일때는 반복문을 이용을하여 add 함수를 이용하여 추가
-                    serializer = RoomDetailSerializer(
-                        room,
-                        context={"request": request},
-                    )
+                        room.amenities.add(amenity)
+                    serializer = RoomDetailSerializer(room)
                     return Response(serializer.data)
             except Exception:
                 raise ParseError("Amenity not found")
@@ -142,44 +132,7 @@ class RoomDetail(APIView):
         room = self.get_object(pk)
         if room.owner != request.user:
             raise PermissionDenied
-        serializer = RoomDetailSerializer(
-            room,
-            data=request.data,
-            partial=True,
-            context={"request": request},
-        )
-        if serializer.is_valid():
-            category_pk = request.data.get("category")
-            if not category_pk:
-                raise ParseError("Category is required")
-            try:
-                category = Category.objects.get(pk=category_pk)
-                if category.kind == Category.CategoryKindChoices.EXPERIENCES:
-                    raise ParseError("The category kind should be 'rooms'")
-            except Category.DoesNotExist:
-                raise ParseError("Category not found")
-
-            try:
-                with transaction.atomic():
-                    room = serializer.save(category=category)
-
-                    amenities = request.data.get("amenities")
-                    if amenities:
-                        room.amenities.clear()
-                        for amenity_pk in amenities:
-                            amenity = Amenity.objects.get(pk=amenity_pk)
-                            room.amenities.add(amenity)
-
-                    print(room.amenities)
-                    serializer = RoomDetailSerializer(
-                        room,
-                        context={"request": request},
-                    )
-                    return Response(serializer.data)
-            except Exception:
-                raise ParseError("Amenity not found")
-        else:
-            return Response(serializer.errors)
+        # your magic
 
     def delete(self, request, pk):
         room = self.get_object(pk)
@@ -205,8 +158,7 @@ class RoomReviews(APIView):
             page = int(page)
         except ValueError:
             page = 1
-
-        page_size = 3
+        page_size = settings.PAGE_SIZE
         start = (page - 1) * page_size
         end = start + page_size
         room = self.get_object(pk)
@@ -227,32 +179,6 @@ class RoomReviews(APIView):
             return Response(serializer.data)
 
 
-class RoomAmenities(APIView):
-    def get_object(self, pk):
-        try:
-            return Room.objects.get(pk=pk)
-        except Room.DoesNotExist:
-            raise NotFound
-
-    def get(self, request, pk):
-        try:
-            page = request.query_params.get("page", 1)
-            page = int(page)
-        except ValueError:
-            page = 1
-
-        page_size = settings.PAGE_SIZE
-        start = (page - 1) * page_size
-        end = start + page_size
-
-        room = self.get_object(pk)
-        serializer = AmenitySerializer(
-            room.amenities.all()[start:end],
-            many=True,
-        )
-        return Response(serializer.data)
-
-
 class RoomPhotos(APIView):
 
     permission_classes = [IsAuthenticatedOrReadOnly]
@@ -265,10 +191,8 @@ class RoomPhotos(APIView):
 
     def post(self, request, pk):
         room = self.get_object(pk)
-
         if request.user != room.owner:
             raise PermissionDenied
-
         serializer = PhotoSerializer(data=request.data)
         if serializer.is_valid():
             photo = serializer.save(room=room)
