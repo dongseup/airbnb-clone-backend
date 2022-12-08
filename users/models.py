@@ -30,7 +30,7 @@ class User(AbstractUser):
         max_length=150,
         default="",
     )
-    avatar = models.ImageField(
+    avatar = models.URLField(
         blank=True,
     )
     is_host = models.BooleanField(
